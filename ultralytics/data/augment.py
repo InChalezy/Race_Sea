@@ -1090,6 +1090,12 @@ class RandomPerspective(BaseTransform):
         perspective: float = 0.0,
         size: tuple[int, int] | None = None,
         preserve_obb: bool = False,
+        viewpoint_aug: bool = False,
+        viewpoint_p: float = 0.5,
+        viewpoint_tilt: float = 0.12,
+        viewpoint_shift: float = 0.05,
+        viewpoint_aniso: float = 0.08,
+        viewpoint_shear: float = 3.0,
     ):
         """Initialize RandomPerspective object with transformation parameters.
 
@@ -1105,6 +1111,12 @@ class RandomPerspective(BaseTransform):
             perspective (float): Perspective distortion factor.
             size (tuple[int, int] | None): Output size (width, height). If None, uses the input image size.
             preserve_obb (bool): Preserve oriented-box direction when transformed segments cross image boundaries.
+            viewpoint_aug (bool): Enable viewpoint-aware projective augmentation.
+            viewpoint_p (float): Probability of applying viewpoint augmentation when enabled.
+            viewpoint_tilt (float): Far-edge compression strength.
+            viewpoint_shift (float): Lateral shift strength.
+            viewpoint_aniso (float): Near-edge anisotropic expansion strength.
+            viewpoint_shear (float): Small shear range in degrees.
         """
         self.degrees = degrees
         self.translate = translate
@@ -1113,6 +1125,58 @@ class RandomPerspective(BaseTransform):
         self.perspective = perspective
         self.size = size
         self.preserve_obb = preserve_obb
+        self.viewpoint_aug = viewpoint_aug
+        self.viewpoint_p = viewpoint_p
+        self.viewpoint_tilt = viewpoint_tilt
+        self.viewpoint_shift = viewpoint_shift
+        self.viewpoint_aniso = viewpoint_aniso
+        self.viewpoint_shear = viewpoint_shear
+
+    def _compute_viewpoint_matrix(self, img: np.ndarray, size: tuple[int, int]) -> tuple[np.ndarray, float]:
+        """Construct a directional homography that compresses the far edge like an oblique UAV view."""
+        src_w, src_h = img.shape[1], img.shape[0]
+        dst_w, dst_h = size
+        src = np.array([[0, 0], [src_w, 0], [src_w, src_h], [0, src_h]], dtype=np.float32)
+        dst = np.array([[0, 0], [dst_w, 0], [dst_w, dst_h], [0, dst_h]], dtype=np.float32)
+
+        tilt = max(0.0, min(float(self.viewpoint_tilt), 0.35)) * random.uniform(0.5, 1.0)
+        shift = max(0.0, min(float(self.viewpoint_shift), 0.25)) * random.uniform(-1.0, 1.0)
+        aniso = max(0.0, min(float(self.viewpoint_aniso), 0.25)) * random.uniform(0.0, 1.0)
+        shear = math.tan(math.radians(random.uniform(-abs(float(self.viewpoint_shear)), abs(float(self.viewpoint_shear)))))
+        direction = random.choice(("top", "bottom", "left", "right"))
+
+        if direction in {"top", "bottom"}:
+            far = tilt * dst_w
+            near = aniso * dst_w
+            lateral = shift * dst_w
+            shear_offset = shear * dst_h * 0.5
+            if direction == "top":
+                dst[0] = [far + lateral + shear_offset, tilt * dst_h * 0.5]
+                dst[1] = [dst_w - far + lateral + shear_offset, tilt * dst_h * 0.5]
+                dst[2] = [dst_w + near - lateral - shear_offset, dst_h]
+                dst[3] = [-near - lateral - shear_offset, dst_h]
+            else:
+                dst[0] = [-near - lateral + shear_offset, 0]
+                dst[1] = [dst_w + near - lateral + shear_offset, 0]
+                dst[2] = [dst_w - far + lateral - shear_offset, dst_h - tilt * dst_h * 0.5]
+                dst[3] = [far + lateral - shear_offset, dst_h - tilt * dst_h * 0.5]
+        else:
+            far = tilt * dst_h
+            near = aniso * dst_h
+            lateral = shift * dst_h
+            shear_offset = shear * dst_w * 0.5
+            if direction == "left":
+                dst[0] = [tilt * dst_w * 0.5, far + lateral + shear_offset]
+                dst[3] = [tilt * dst_w * 0.5, dst_h - far + lateral + shear_offset]
+                dst[1] = [dst_w, -near - lateral - shear_offset]
+                dst[2] = [dst_w, dst_h + near - lateral - shear_offset]
+            else:
+                dst[0] = [0, -near - lateral + shear_offset]
+                dst[3] = [0, dst_h + near - lateral + shear_offset]
+                dst[1] = [dst_w - tilt * dst_w * 0.5, far + lateral - shear_offset]
+                dst[2] = [dst_w - tilt * dst_w * 0.5, dst_h - far + lateral - shear_offset]
+
+        return cv2.getPerspectiveTransform(src, dst).astype(np.float32), 1.0
 
     def _compute_affine_matrix(self, img: np.ndarray, size: tuple[int, int]) -> tuple[np.ndarray, float]:
         """Compute the affine transformation matrix without applying it.
@@ -1124,6 +1188,9 @@ class RandomPerspective(BaseTransform):
         Returns:
             (M, scale): 3x3 transformation matrix and scale factor.
         """
+        if self.viewpoint_aug and random.random() < self.viewpoint_p:
+            return self._compute_viewpoint_matrix(img, size)
+
         # Center
         C = np.eye(3, dtype=np.float32)
         C[0, 2] = -img.shape[1] / 2  # x translation (pixels)
@@ -1174,7 +1241,8 @@ class RandomPerspective(BaseTransform):
             size = (img.shape[1], img.shape[0]) if self.size is None else self.size  # w, h
         orig_shape = img.shape[:2]
         M, scale = self._compute_affine_matrix(img, size)
-        return {"M": M, "scale": scale, "orig_shape": orig_shape, "size": size}
+        is_projective = self.perspective or (not np.allclose(M[2], np.array([0, 0, 1], dtype=M.dtype)))
+        return {"M": M, "scale": scale, "orig_shape": orig_shape, "size": size, "perspective": is_projective}
 
     def apply_image(self, labels: dict[str, Any], params: dict[str, Any] | None = None) -> dict[str, Any]:
         """Apply affine warp to the image.
@@ -1190,7 +1258,7 @@ class RandomPerspective(BaseTransform):
         M = params["M"]
         size = params["size"]
         # 4 values: cv2 tiles borderValue in blocks of 4, so a 3-tuple zeroes every 4th multispectral channel
-        if self.perspective:
+        if params.get("perspective", self.perspective):
             img = cv2.warpPerspective(img, M, dsize=size, borderValue=(114, 114, 114, 114))
         else:  # affine
             img = cv2.warpAffine(img, M[:2], dsize=size, borderValue=(114, 114, 114, 114))
@@ -1210,7 +1278,7 @@ class RandomPerspective(BaseTransform):
         M = params["M"]
         scale = params["scale"]
 
-        bboxes = self.apply_bboxes(instances.bboxes, M)
+        bboxes = self.apply_bboxes(instances.bboxes, M, params.get("perspective", self.perspective))
 
         segments = instances.segments
         keypoints = instances.keypoints
@@ -1234,7 +1302,7 @@ class RandomPerspective(BaseTransform):
         labels["cls"] = cls[i]
         return labels
 
-    def apply_bboxes(self, bboxes: np.ndarray, M: np.ndarray) -> np.ndarray:
+    def apply_bboxes(self, bboxes: np.ndarray, M: np.ndarray, perspective: bool | None = None) -> np.ndarray:
         """Apply affine transformation to bounding boxes.
 
         This function applies an affine transformation to a set of bounding boxes using the provided transformation
@@ -1244,6 +1312,7 @@ class RandomPerspective(BaseTransform):
             bboxes (np.ndarray): Bounding boxes in xyxy format with shape (N, 4), where N is the number of bounding
                 boxes.
             M (np.ndarray): Affine transformation matrix with shape (3, 3).
+            perspective (bool | None): Whether to divide by the homogeneous coordinate.
 
         Returns:
             (np.ndarray): Transformed bounding boxes in xyxy format with shape (N, 4).
@@ -1261,7 +1330,8 @@ class RandomPerspective(BaseTransform):
         xy = np.ones((n * 4, 3), dtype=bboxes.dtype)
         xy[:, :2] = bboxes[:, [0, 1, 2, 3, 0, 3, 2, 1]].reshape(n * 4, 2)  # x1y1, x2y2, x1y2, x2y1
         xy = xy @ M.T  # transform
-        xy = (xy[:, :2] / xy[:, 2:3] if self.perspective else xy[:, :2]).reshape(n, 8)  # perspective rescale or affine
+        use_perspective = self.perspective if perspective is None else perspective
+        xy = (xy[:, :2] / xy[:, 2:3] if use_perspective else xy[:, :2]).reshape(n, 8)  # perspective rescale or affine
 
         # Create new boxes
         x = xy[:, [0, 2, 4, 6]]
@@ -1338,7 +1408,7 @@ class RandomPerspective(BaseTransform):
         M = params["M"]
         size = params["size"]
         if (size[0] != mask.shape[1] or size[1] != mask.shape[0]) or (M != np.eye(3)).any():
-            if self.perspective:
+            if params.get("perspective", self.perspective):
                 mask = cv2.warpPerspective(mask, M, dsize=size, flags=cv2.INTER_NEAREST, borderValue=255)
             else:
                 mask = cv2.warpAffine(mask, M[:2], dsize=size, flags=cv2.INTER_NEAREST, borderValue=255)
@@ -1358,7 +1428,7 @@ class RandomPerspective(BaseTransform):
         M = params["M"]
         size = params["size"]
         if (size[0] != depth.shape[1] or size[1] != depth.shape[0]) or (M != np.eye(3)).any():
-            if self.perspective:
+            if params.get("perspective", self.perspective):
                 depth = cv2.warpPerspective(depth, M, dsize=size, flags=cv2.INTER_NEAREST, borderValue=0)
             else:
                 depth = cv2.warpAffine(depth, M[:2], dsize=size, flags=cv2.INTER_NEAREST, borderValue=0)
@@ -2818,6 +2888,12 @@ def v8_transforms(dataset, imgsz: int, hyp: IterableSimpleNamespace):
         perspective=hyp.perspective,
         size=(imgsz, imgsz),
         preserve_obb=getattr(dataset, "use_obb", False),
+        viewpoint_aug=getattr(hyp, "viewpoint_aug", False),
+        viewpoint_p=getattr(hyp, "viewpoint_p", 0.5),
+        viewpoint_tilt=getattr(hyp, "viewpoint_tilt", 0.12),
+        viewpoint_shift=getattr(hyp, "viewpoint_shift", 0.05),
+        viewpoint_aniso=getattr(hyp, "viewpoint_aniso", 0.08),
+        viewpoint_shear=getattr(hyp, "viewpoint_shear", 3.0),
     )
 
     pre_transform = Compose([mosaic, affine])

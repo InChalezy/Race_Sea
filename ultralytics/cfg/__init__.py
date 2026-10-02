@@ -214,6 +214,7 @@ CFG_FLOAT_KEYS = frozenset(
         "dis",
         "degrees",
         "shear",
+        "viewpoint_shear",
         "time",
         "workspace",
         "batch",
@@ -235,6 +236,10 @@ CFG_FRACTION_KEYS = frozenset(
         "hsv_v",
         "translate",
         "perspective",
+        "viewpoint_p",
+        "viewpoint_tilt",
+        "viewpoint_shift",
+        "viewpoint_aniso",
         "flipud",
         "fliplr",
         "bgr",
@@ -310,6 +315,7 @@ CFG_BOOL_KEYS = frozenset(
         "strip_reg",
         "hbs",
         "hbs_all_levels",
+        "viewpoint_aug",
     }
 )
 CFG_STR_KEYS = frozenset({"optimizer", "split", "copy_paste_mode", "auto_augment"})

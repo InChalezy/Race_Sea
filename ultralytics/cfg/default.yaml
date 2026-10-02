@@ -126,6 +126,12 @@ translate: 0.1 # (float) translation fraction (+/-)
 scale: 0.5 # (float | tuple) scale gain (+/-) as float, or explicit (min, max) tuple
 shear: 0.0 # (float) shear degrees (+/-)
 perspective: 0.0 # (float) perspective fraction (0–0.001 typical)
+viewpoint_aug: False # (bool) enable training-only Viewpoint-Aware Projective Augmentation
+viewpoint_p: 0.5 # (float) probability of applying viewpoint-aware projective augmentation when enabled
+viewpoint_tilt: 0.12 # (float) far-edge compression strength for viewpoint-aware projective augmentation
+viewpoint_shift: 0.05 # (float) lateral viewpoint shift strength
+viewpoint_aniso: 0.08 # (float) near-edge anisotropic expansion strength
+viewpoint_shear: 3.0 # (float) small shear degrees for viewpoint-aware projective augmentation
 flipud: 0.0 # (float) vertical flip probability
 fliplr: 0.5 # (float) horizontal flip probability
 bgr: 0.0 # (float) RGB↔BGR channel swap probability
