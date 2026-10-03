@@ -17,7 +17,6 @@ import struct
 from collections import Counter
 from pathlib import Path
 
-
 DEFAULT_SOURCE = Path("/mnt/shared_data/wangzijian/datasets/race_dataset")
 DEFAULT_OUTPUT = Path(__file__).resolve().parents[1] / "train_data_sea"
 
@@ -130,8 +129,7 @@ def image_size(path: Path) -> tuple[int, int, str]:
 def polygon_area(points: list[tuple[float, float]]) -> float:
     return abs(
         sum(
-            points[i][0] * points[(i + 1) % len(points)][1]
-            - points[(i + 1) % len(points)][0] * points[i][1]
+            points[i][0] * points[(i + 1) % len(points)][1] - points[(i + 1) % len(points)][0] * points[i][1]
             for i in range(len(points))
         )
         / 2.0
@@ -292,14 +290,11 @@ def main() -> None:
         "image_formats": {name: totals[f"format:{name}"] for name in ("jpeg", "png", "tiff")},
         "class_counts": {name: totals[f"class:{name}"] for name in CLASS_NAMES},
         "split_class_counts": {
-            split: {name: split_totals[split][f"class:{name}"] for name in CLASS_NAMES}
-            for split in ("train", "val")
+            split: {name: split_totals[split][f"class:{name}"] for name in CLASS_NAMES} for split in ("train", "val")
         },
         "class_names": list(CLASS_NAMES),
     }
-    (output / "manifest.json").write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
-    )
+    (output / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(manifest, ensure_ascii=False, indent=2))
     print(f"Prepared dataset YAML: {output / 'race_dataset.yaml'}")
 
