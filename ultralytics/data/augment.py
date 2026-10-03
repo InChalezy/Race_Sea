@@ -1142,7 +1142,9 @@ class RandomPerspective(BaseTransform):
         tilt = max(0.0, min(float(self.viewpoint_tilt), 0.35)) * random.uniform(0.5, 1.0)
         shift = max(0.0, min(float(self.viewpoint_shift), 0.25)) * random.uniform(-1.0, 1.0)
         aniso = max(0.0, min(float(self.viewpoint_aniso), 0.25)) * random.uniform(0.0, 1.0)
-        shear = math.tan(math.radians(random.uniform(-abs(float(self.viewpoint_shear)), abs(float(self.viewpoint_shear)))))
+        shear = math.tan(
+            math.radians(random.uniform(-abs(float(self.viewpoint_shear)), abs(float(self.viewpoint_shear))))
+        )
         direction = random.choice(("top", "bottom", "left", "right"))
 
         if direction in {"top", "bottom"}:
