@@ -44,12 +44,8 @@ class StripRegBlock(nn.Module):
             raise ValueError(f"kernel_size must be a positive odd integer, but got {kernel_size}")
         padding = kernel_size // 2
         self.local = nn.Conv2d(channels, channels, 5, padding=2, groups=channels)
-        self.horizontal = nn.Conv2d(
-            channels, channels, (1, kernel_size), padding=(0, padding), groups=channels
-        )
-        self.vertical = nn.Conv2d(
-            channels, channels, (kernel_size, 1), padding=(padding, 0), groups=channels
-        )
+        self.horizontal = nn.Conv2d(channels, channels, (1, kernel_size), padding=(0, padding), groups=channels)
+        self.vertical = nn.Conv2d(channels, channels, (kernel_size, 1), padding=(padding, 0), groups=channels)
         self.proj = nn.Conv2d(channels, channels, 1)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
@@ -99,9 +95,7 @@ class HBSBlock(nn.Module):
                 angle = image_boxes[:, 4]
                 cos, sin = angle.cos().abs(), angle.sin().abs()
                 box_width, box_height = sizes[:, 0], sizes[:, 1]
-                sizes = torch.stack(
-                    (box_width * cos + box_height * sin, box_width * sin + box_height * cos), dim=-1
-                )
+                sizes = torch.stack((box_width * cos + box_height * sin, box_width * sin + box_height * cos), dim=-1)
             xy1 = (centers - sizes / 2).clamp_(0, 1)
             xy2 = (centers + sizes / 2).clamp_(0, 1)
             inside_x = (x_right[None] > xy1[:, 0:1]) & (x_left[None] < xy2[:, 0:1])
@@ -283,9 +277,7 @@ class Detect(nn.Module):
         enhanced = list(features)
         if isinstance(self.hbs, nn.ModuleList):
             if len(self.hbs) != len(enhanced):
-                raise RuntimeError(
-                    f"HBS has {len(self.hbs)} levels, but the detection head received {len(enhanced)}"
-                )
+                raise RuntimeError(f"HBS has {len(self.hbs)} levels, but the detection head received {len(enhanced)}")
             enhanced = [hbs(feature, batch) for hbs, feature in zip(self.hbs, enhanced)]
         else:
             enhanced[0] = self.hbs(enhanced[0], batch)
