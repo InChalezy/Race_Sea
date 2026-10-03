@@ -9,7 +9,6 @@ from pathlib import Path
 
 from ultralytics import YOLO
 
-
 EXPECTED_CLASSES = {
     "集装箱船",
     "散装货船",
@@ -122,9 +121,7 @@ def main() -> None:
     if missing or unexpected:
         raise RuntimeError(f"inference result mismatch: missing={missing[:5]}, unexpected={unexpected[:5]}")
 
-    submission = [
-        {"image_id": path.name, "predictions": predictions_by_image[path.name]} for path in image_paths
-    ]
+    submission = [{"image_id": path.name, "predictions": predictions_by_image[path.name]} for path in image_paths]
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(submission, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     detection_count = sum(len(item["predictions"]) for item in submission)
